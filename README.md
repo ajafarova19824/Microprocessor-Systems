@@ -3,7 +3,7 @@
 This repository contains lab assignments, reports, and Arduino Uno codes for the **Microprocessor Systems** course.
 
 ## 📚 Contents
-- Lab 1: Basic Blink
+[ - Lab 1: Basic Blink ] (Labs/Task1_BLINK)
 - Lab 2: Registers
 - Lab 3: Counter
 - Lab 4: Timers & Interrupts
