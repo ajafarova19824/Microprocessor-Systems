@@ -1,0 +1,305 @@
+#include <avr/io.h>      // Gives names for AVR registers like DDRB, PORTB, PINB
+#include <util/delay.h>  // Provides _delay_ms() function for delays
+#include <stdint.h>      // Provides fixed-width integer types (uint8_t, uint16_t)
+
+
+// ─────────────────────────────────────────────
+// Action handler declarations
+// These are the functions that will be called via IJMP
+// ─────────────────────────────────────────────
+void action0(void);
+void action1(void);
+void action2(void);
+void action3(void);
+
+
+// ─────────────────────────────────────────────
+// Mode entry functions
+// __attribute__((noreturn)) tells the compiler that
+// once we enter these functions we never return.
+// Each mode runs forever.
+// ─────────────────────────────────────────────
+extern "C" void modeA_entry(void) __attribute__((noreturn, used, externally_visible));
+extern "C" void modeB_entry(void) __attribute__((noreturn, used, externally_visible));
+extern "C" void modeC_entry(void) __attribute__((noreturn, used, externally_visible));
+
+
+// ─────────────────────────────────────────────
+// Global timing variables used by action handlers
+// These define LED ON and OFF durations.
+// Modes change these values.
+// ─────────────────────────────────────────────
+volatile uint16_t g_on_time = 500;
+volatile uint16_t g_off_time = 500;
+
+
+// Current action index (0–3)
+volatile uint8_t action_index = 0;
+
+
+// ─────────────────────────────────────────────
+// Function pointer type for actions
+// This represents a pointer to a function taking no
+// parameters and returning void.
+// ─────────────────────────────────────────────
+typedef void (*action_fn)(void);
+
+
+// Jump table containing addresses of action handlers
+// This table is used by IJMP to dispatch actions.
+action_fn action_table[4] = { action0, action1, action2, action3 };
+
+
+// ─────────────────────────────────────────────
+// Variable delay helper
+// _delay_ms() works best with constants, so to create
+// variable delays we call it repeatedly in a loop.
+// ─────────────────────────────────────────────
+static void delay_ms_var(uint16_t ms) {
+    while (ms--) _delay_ms(1);
+}
+
+
+// ─────────────────────────────────────────────
+// Wait until button is released and debounce it
+// Button is on PB0 (Arduino D8)
+// Pressed = LOW (because of internal pull-up)
+// ─────────────────────────────────────────────
+static void wait_release_and_debounce(void) {
+
+    // Wait until button becomes released (goes HIGH)
+    while (!(PINB & (1 << PB0)));
+
+    // Wait 50 ms to allow mechanical bounce to settle
+    _delay_ms(50);
+}
+
+
+// ─────────────────────────────────────────────
+// Action 0: normal blink pattern
+// LED ON → delay → LED OFF → delay
+// Then jump back to mode loop
+// ─────────────────────────────────────────────
+void action0(void) {
+
+    PORTB |= (1 << PB5);        // Turn LED ON (PB5 = D13)
+    delay_ms_var(g_on_time);    // Wait ON time
+
+    PORTB &= ~(1 << PB5);       // Turn LED OFF
+    delay_ms_var(g_off_time);   // Wait OFF time
+
+    // Return to the mode loop
+    asm volatile("jmp mode_loop");
+}
+
+
+// ─────────────────────────────────────────────
+// Action 1: inverted blink pattern
+// OFF delay first, then ON delay
+// ─────────────────────────────────────────────
+void action1(void) {
+
+    PORTB &= ~(1 << PB5);       // LED OFF
+    delay_ms_var(g_off_time);   // Wait OFF time
+
+    PORTB |= (1 << PB5);        // LED ON
+    delay_ms_var(g_on_time);    // Wait ON time
+
+    asm volatile("rjmp mode_loop");
+}
+
+
+// ─────────────────────────────────────────────
+// Action 2: simulate dim LED using short pulse
+// Very short ON time then long OFF
+// ─────────────────────────────────────────────
+void action2(void) {
+
+    PORTB |= (1 << PB5);  // LED ON
+    _delay_ms(30);        // Short flash
+
+    PORTB &= ~(1 << PB5); // LED OFF
+    delay_ms_var(g_on_time + g_off_time); // Long OFF period
+
+    asm volatile("rjmp mode_loop");
+}
+
+
+// ─────────────────────────────────────────────
+// Action 3: reset action state back to action 0
+// ─────────────────────────────────────────────
+void action3(void) {
+
+    action_index = 0;  // Reset action selection
+
+    asm volatile("rjmp mode_loop");
+}
+
+
+// ─────────────────────────────────────────────
+// Main mode loop used by Mode A and Mode C
+// Handles button presses and dispatches actions
+// via IJMP.
+// ─────────────────────────────────────────────
+static void run_mode(void) {
+
+    // Label used by action handlers to jump back here
+    asm volatile("mode_loop:");
+
+    while (1) {
+
+        // Check if button pressed (active LOW)
+        if (!(PINB & (1 << PB0))) {
+
+            action_index++;        // Move to next action
+            action_index %= 4;     // Wrap around 0–3
+
+            wait_release_and_debounce();  // Debounce
+        }
+
+        // Dispatch selected action using IJMP
+        asm volatile(
+            "movw r30, %0\n\t"   // Load action address into Z register (r31:r30)
+            "ijmp\n\t"           // Jump indirectly to action
+            :
+            : "r"(action_table[action_index])
+        );
+    }
+}
+
+
+// ─────────────────────────────────────────────
+// Mode A: slow blink
+// Uses run_mode() with long delays
+// ─────────────────────────────────────────────
+extern "C" void modeA_entry(void) {
+
+    g_on_time = 1000;  // 1 second ON
+    g_off_time = 1000; // 1 second OFF
+
+    run_mode();        // Enter mode loop
+
+    while (1) { }      // Safety (never reached)
+}
+
+
+// ─────────────────────────────────────────────
+// Mode B: double blink pattern
+// Has its own loop because pattern differs
+// ─────────────────────────────────────────────
+extern "C" void modeB_entry(void) {
+
+    while (1) {
+
+        // Detect button press to change action
+        if (!(PINB & (1 << PB0))) {
+
+            action_index++;
+            action_index %= 4;
+
+            wait_release_and_debounce();
+        }
+
+        // Base double blink pattern
+        PORTB |= (1 << PB5); _delay_ms(120);
+        PORTB &= ~(1 << PB5); _delay_ms(120);
+
+        PORTB |= (1 << PB5); _delay_ms(120);
+        PORTB &= ~(1 << PB5); _delay_ms(600);
+
+        // Dispatch action handler
+        asm volatile(
+            "movw r30, %0\n\t"
+            "ijmp\n\t"
+            :
+            : "r"(action_table[action_index])
+        );
+    }
+}
+
+
+// ─────────────────────────────────────────────
+// Mode C: fast strobe
+// Uses run_mode() with short delays
+// ─────────────────────────────────────────────
+extern "C" void modeC_entry(void) {
+
+    g_on_time = 50;   // 50 ms ON
+    g_off_time = 50;  // 50 ms OFF
+
+    run_mode();
+
+    while (1) { }
+}
+
+
+// ─────────────────────────────────────────────
+// MAIN PROGRAM
+// ─────────────────────────────────────────────
+int main(void) {
+
+    // Configure pins
+    DDRB |= (1 << PB5);      // PB5 (D13) = OUTPUT (LED)
+    DDRB &= ~(1 << PB0);     // PB0 (D8) = INPUT (button)
+
+    PORTB |= (1 << PB0);     // Enable internal pull-up resistor
+
+
+    // ─────────────────────────────────────────
+    // Boot wait loop using RJMP
+    // Wait here until button is pressed
+    // ─────────────────────────────────────────
+    asm volatile(
+        "wait_btn:\n\t"
+        "sbic %0, 0\n\t"   // Skip next instruction if button pressed
+        "rjmp wait_btn\n\t" // Otherwise jump back and keep waiting
+        :
+        : "I"(_SFR_IO_ADDR(PINB))
+    );
+
+
+    // Confirmation flash (200 ms)
+    PORTB |= (1 << PB5);
+    _delay_ms(200);
+    PORTB &= ~(1 << PB5);
+
+
+    // ─────────────────────────────────────────
+    // Count button presses for 2 seconds
+    // ─────────────────────────────────────────
+    uint8_t presses = 0;
+    uint16_t timer = 0;
+
+    while (timer < 2000) {
+
+        if (!(PINB & (1 << PB0))) {
+
+            presses++;                     // Count press
+            wait_release_and_debounce();   // Debounce
+        }
+
+        _delay_ms(1);  // Wait 1 ms
+        timer++;       // Increase timer
+    }
+
+
+    // ─────────────────────────────────────────
+    // Mode selection using JMP
+    // ─────────────────────────────────────────
+    if (presses >= 3) {
+
+        asm volatile("jmp modeC_entry");   // 3 presses → Mode C
+
+    } else if (presses == 2) {
+
+        asm volatile("jmp modeB_entry");   // 2 presses → Mode B
+
+    } else {
+
+        asm volatile("jmp modeA_entry");   // 1 press → Mode A
+    }
+
+
+    // Should never reach here
+    while (1) { }
+}
