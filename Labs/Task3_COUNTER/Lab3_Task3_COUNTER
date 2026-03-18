@@ -1,1 +1,56 @@
+#include <Arduino.h>
+#include <avr/io.h>
 
+volatile uint8_t myCounter = 0;
+
+uint8_t eeprom_read(uint8_t addr) {
+  while (EECR & (1 << EEPE));
+  EEAR = addr;
+  EECR |= (1 << EERE);
+  return EEDR;
+}
+ 
+void eeprom_write(uint8_t addr, uint8_t val) {
+  while (EECR & (1 << EEPE));
+  EEAR = addr;
+  EEDR = val;
+  EECR |= (1 << EEMPE);
+  EECR |= (1 << EEPE);
+}
+ 
+void setup() {
+  Serial.begin(9600);
+
+  uint8_t saved = eeprom_read(0x00);
+  if (saved == 0xFF) saved = 0;
+  myCounter = saved;
+}
+ 
+void loop() {
+
+  asm volatile (
+    "lds r16, myCounter  \n\t"
+    "inc r16           \n\t"
+    "sts myCounter, r16  \n\t"
+  );
+ 
+  Serial.print("Count (r16): ");
+  Serial.println(myCounter);
+ 
+  if (Serial.available()) {
+    char cmd = Serial.read();
+ 
+    if (cmd == 'S') {
+      eeprom_write(0x01, myCounter);
+      Serial.println("Saved!");
+    }
+ 
+    if (cmd == 'R') {
+      myCounter = 0;
+      eeprom_write(0x00, 0);
+      Serial.println("Reset!");
+    }
+  }
+ 
+  delay(1000);
+}
