@@ -4,13 +4,12 @@ This repository contains lab assignments, reports, and Arduino Uno codes for the
 
 ## 📚 Contents
 [- Lab 1: Basic Blink](Labs/Task1_BLINK/Lab_1_BLINK.ino)
-- Lab 2: Registers
-- Lab 3: Counter
-- Lab 4: Timers & Interrupts
-- Lab 5: Instruction Execution and Control Flow
-- Extras: Reference materials and example projects
+[- Lab 2: Registers](Labs/Task2_Registers/Task_2.ino)
+[- Lab 3: Counter](Labs/Task3_COUNTER/Task_3_v2.ino)
+[- Lab 4: Timers & Interrupts](Labs/Task4_Timers_and_Interrupts/Task_4.ino)
+[- Lab 5: Instruction Execution and Control Flow](Labs/Task5_INSTRUCTION_EXECUTION_AND_CONTROL_FLOW/Task_5.ino)
 
 ## ⚡ Requirements
 - Arduino IDE
 - Arduino Uno board
-- Basic electronic components (LEDs, resistors, sensors, etc.)
+- Basic electronic components (LEDs, resistors, etc.)
