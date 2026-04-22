@@ -13,6 +13,14 @@ This repository contains lab assignments, reports, and Arduino Uno codes for the
 
 [- Lab 5: Instruction Execution and Control Flow](Labs/Task5_INSTRUCTION_EXECUTION_AND_CONTROL_FLOW/Task_5.ino)
 
+[- Lab 6: Buses and UART](Labs/Task6_BUSES_AND_UART/Lab_6_1_BUSES_AND_UART.ino)
+
+[- Lab 7: SPI: Master](Labs/Task7_SPI/Task_7_Master.ino)
+
+[- Lab 7: SPI: Slave](Labs/Task7_SPI/Task_7_Slave.ino)
+
+[- Lab 8: I2C]()
+
 ## ⚡ Requirements
 - Arduino IDE
 - Arduino Uno board
