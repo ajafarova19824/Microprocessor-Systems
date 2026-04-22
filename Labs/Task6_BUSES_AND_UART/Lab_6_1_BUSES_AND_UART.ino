@@ -3,33 +3,36 @@
 #include <stdio.h>
 
 // 7-segment patterns (Common Cathode)
-// Bits 0-5 map to PB0-PB5, Bit 6 maps to PD7
 const uint8_t seg_table[] = {
-    0x3F, // 0
-    0x06, // 1
-    0x5B, // 2
-    0x4F, // 3
-    0x66, // 4
-    0x6D, // 5
-    0x7D, // 6
-    0x07, // 7
-    0x7F, // 8
-    0x6F  // 9
+    0x3F, 0x06, 0x5B, 0x4F, 0x66,
+    0x6D, 0x7D, 0x07, 0x7F, 0x6F
 };
 
-volatile uint8_t count = 0;
-volatile uint8_t paused = 0;
+volatile uint8_t  count          = 0;
+volatile uint8_t  paused         = 0;
 
-// UART Initialization
+// --- Debounce state ---------------------------------------------------------
+// Timer1 overflows every 0.5 s (OCR1A=7811, prescaler=1024 @ 8MHz).
+// We count those half-second "ticks" and refuse a second button event
+// until at least DEBOUNCE_TICKS have passed since the last accepted one.
+// 1 tick ≈ 500 ms  →  a lockout of 1 tick means ~500 ms minimum between
+// accepted presses, which is more than enough to swallow all bounce.
+// You can lower to 0 ticks + a TCNT1 delta check for finer control (see note).
+#define DEBOUNCE_TICKS 1          // minimum half-second ticks between presses
+
+volatile uint16_t timer_ticks    = 0;   // incremented in TIMER1_COMPA_vect
+volatile uint16_t last_press_tick = 0;  // tick count at last accepted press
+// ---------------------------------------------------------------------------
+
 void uart_init(uint32_t baud) {
-    uint16_t ubrr = F_CPU/16/baud - 1;
+    uint16_t ubrr = F_CPU / 16 / baud - 1;
     UBRR0H = (uint8_t)(ubrr >> 8);
     UBRR0L = (uint8_t)ubrr;
-    UCSR0B = (1 << TXEN0); // Enable Transmitter
-    UCSR0C = (1 << UCSZ01) | (1 << UCSZ00); // 8-bit data
+    UCSR0B = (1 << TXEN0);
+    UCSR0C = (1 << UCSZ01) | (1 << UCSZ00);
 }
 
-void uart_print(char* str) {
+void uart_print(const char* str) {
     while (*str) {
         while (!(UCSR0A & (1 << UDRE0)));
         UDR0 = *str++;
@@ -38,57 +41,61 @@ void uart_print(char* str) {
 
 void update_display(uint8_t num) {
     uint8_t pattern = seg_table[num];
-    
-    // Output bits 0-5 to PORTB
     PORTB = (PORTB & 0xC0) | (pattern & 0x3F);
-    
-    // Output bit 6 to PD7
-    if (pattern & 0x40) PORTD |= (1 << PD7);
-    else PORTD &= ~(1 << PD7);
+    if (pattern & 0x40) PORTD |=  (1 << PD7);
+    else                PORTD &= ~(1 << PD7);
 }
 
 void init_hardware() {
-    // GPIO Config
-    DDRB |= 0x3F; // PB0-PB5 as Output
-    DDRD |= (1 << DDD7); // PD7 as Output
-    DDRD &= ~(1 << DDD2); // PD2 as Input
-    PORTD |= (1 << PORTD2); // Pull-up on PD2
+    // GPIO
+    DDRB |=  0x3F;
+    DDRD |=  (1 << DDD7);
+    DDRD &= ~(1 << DDD2);
+    PORTD |= (1 << PORTD2);   // pull-up on INT0 pin
 
-    // Timer1 Config (CTC Mode)
-    TCCR1B |= (1 << WGM12) | (1 << CS12) | (1 << CS10); // CTC, 1024 Prescaler
-    OCR1A = 7812;
-    TIMSK1 |= (1 << OCIE1A); // Enable Compare Match Interrupt
+    // Timer1 – CTC, prescaler 1024
+    TCCR1B |= (1 << WGM12) | (1 << CS12) | (1 << CS10);
+    OCR1A   = 7811;
+    TIMSK1 |= (1 << OCIE1A);
 
-    // External Interrupt Config
-    EICRA |= (1 << ISC01); // Falling edge
-    EIMSK |= (1 << INT0);  // Enable INT0
+    // INT0 – falling edge
+    EICRA |= (1 << ISC01);
+    EIMSK |= (1 << INT0);
 
-    sei(); // Global Interrupts
+    sei();
 }
 
+// ---------------------------------------------------------------------------
 ISR(TIMER1_COMPA_vect) {
+    timer_ticks++;                    // free-running tick counter for debounce
+
     if (!paused) {
+        count = (count >= 9) ? 0 : count + 1;
         update_display(count);
-        char buf[15];
+
+        char buf[16];
         sprintf(buf, "Count: %d\r\n", count);
         uart_print(buf);
-        
-        count++;
-        if (count > 9) count = 0;
     }
 }
 
+// ---------------------------------------------------------------------------
 ISR(INT0_vect) {
+    // --- Debounce gate -------------------------------------------------------
+    // Cast to uint16_t arithmetic so it wraps correctly if timer_ticks rolls over
+    uint16_t elapsed = (uint16_t)(timer_ticks - last_press_tick);
+    if (elapsed < DEBOUNCE_TICKS) return;   // inside lockout window → ignore
+    last_press_tick = timer_ticks;          // accept this edge, arm lockout
+    // -------------------------------------------------------------------------
+
     paused = !paused;
     uart_print(paused ? "Paused\r\n" : "Resumed\r\n");
 }
+// ---------------------------------------------------------------------------
 
-int main() {
+int main(void) {
     uart_init(9600);
     init_hardware();
     update_display(0);
-    
-    while (1) {
-        // Main loop empty; logic is interrupt-driven
-    }
+    while (1) { /* interrupt-driven */ }
 }
