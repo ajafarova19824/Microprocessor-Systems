@@ -1,0 +1,94 @@
+#include <avr/io.h>
+#include <avr/interrupt.h>
+#include <stdio.h>
+
+// 7-segment patterns (Common Cathode)
+// Bits 0-5 map to PB0-PB5, Bit 6 maps to PD7
+const uint8_t seg_table[] = {
+    0x3F, // 0
+    0x06, // 1
+    0x5B, // 2
+    0x4F, // 3
+    0x66, // 4
+    0x6D, // 5
+    0x7D, // 6
+    0x07, // 7
+    0x7F, // 8
+    0x6F  // 9
+};
+
+volatile uint8_t count = 0;
+volatile uint8_t paused = 0;
+
+// UART Initialization
+void uart_init(uint32_t baud) {
+    uint16_t ubrr = F_CPU/16/baud - 1;
+    UBRR0H = (uint8_t)(ubrr >> 8);
+    UBRR0L = (uint8_t)ubrr;
+    UCSR0B = (1 << TXEN0); // Enable Transmitter
+    UCSR0C = (1 << UCSZ01) | (1 << UCSZ00); // 8-bit data
+}
+
+void uart_print(char* str) {
+    while (*str) {
+        while (!(UCSR0A & (1 << UDRE0)));
+        UDR0 = *str++;
+    }
+}
+
+void update_display(uint8_t num) {
+    uint8_t pattern = seg_table[num];
+    
+    // Output bits 0-5 to PORTB
+    PORTB = (PORTB & 0xC0) | (pattern & 0x3F);
+    
+    // Output bit 6 to PD7
+    if (pattern & 0x40) PORTD |= (1 << PD7);
+    else PORTD &= ~(1 << PD7);
+}
+
+void init_hardware() {
+    // GPIO Config
+    DDRB |= 0x3F; // PB0-PB5 as Output
+    DDRD |= (1 << DDD7); // PD7 as Output
+    DDRD &= ~(1 << DDD2); // PD2 as Input
+    PORTD |= (1 << PORTD2); // Pull-up on PD2
+
+    // Timer1 Config (CTC Mode)
+    TCCR1B |= (1 << WGM12) | (1 << CS12) | (1 << CS10); // CTC, 1024 Prescaler
+    OCR1A = 7812;
+    TIMSK1 |= (1 << OCIE1A); // Enable Compare Match Interrupt
+
+    // External Interrupt Config
+    EICRA |= (1 << ISC01); // Falling edge
+    EIMSK |= (1 << INT0);  // Enable INT0
+
+    sei(); // Global Interrupts
+}
+
+ISR(TIMER1_COMPA_vect) {
+    if (!paused) {
+        update_display(count);
+        char buf[15];
+        sprintf(buf, "Count: %d\r\n", count);
+        uart_print(buf);
+        
+        count++;
+        if (count > 9) count = 0;
+    }
+}
+
+ISR(INT0_vect) {
+    paused = !paused;
+    uart_print(paused ? "Paused\r\n" : "Resumed\r\n");
+}
+
+int main() {
+    uart_init(9600);
+    init_hardware();
+    update_display(0);
+    
+    while (1) {
+        // Main loop empty; logic is interrupt-driven
+    }
+}
