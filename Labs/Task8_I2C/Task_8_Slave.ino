@@ -1,0 +1,51 @@
+#include <avr/io.h>
+#include <avr/interrupt.h>
+
+#define MY_ADDR 0x08
+
+volatile uint8_t masterCommand = 0;
+volatile uint8_t slaveButtonState = 0;
+
+void i2c_slave_init(uint8_t addr) {
+    PRR &= ~(1 << PRTWI);      // Enable TWI power 
+    TWAR = (addr << 1);        // Set own slave address 
+    // Enable TWI, ACK, and Interrupts
+    TWCR = (1 << TWEN) | (1 << TWEA) | (1 << TWIE); 
+    sei(); // Enable global interrupts
+}
+
+ISR(TWI_vect) {
+    uint8_t status = (TWSR & 0xF8); // Mask status bits 
+
+    switch (status) {
+        case 0x80: // Data received, ACK returned
+            masterCommand = TWDR;
+            TWCR |= (1 << TWINT); // Clear flag to continue
+            break;
+        case 0xA8: // SLA+R received (Master wants data)
+        case 0xB8: // Data transmitted, ACK received
+            TWDR = slaveButtonState;
+            TWCR |= (1 << TWINT);
+            break;
+        default:
+            // Release bus if status is unknown/error
+            TWCR = (1 << TWEN) | (1 << TWIE) | (1 << TWINT) | (1 << TWEA);
+            break;
+    }
+}
+
+void setup() {
+    DDRD &= ~(1 << DDD2);   // Button
+    PORTD |= (1 << PORTD2); // Pull-up
+    DDRB |= (1 << DDB5);    // LED
+    i2c_slave_init(MY_ADDR);
+}
+
+void loop() {
+    // Control LED based on Master's command
+    if (masterCommand) PORTB |= (1 << PORTB5);
+    else PORTB &= ~(1 << PORTB5);
+
+    // Read local button
+    slaveButtonState = !(PIND & (1 << PIND2));
+}
