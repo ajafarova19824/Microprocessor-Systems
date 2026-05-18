@@ -19,7 +19,9 @@ This repository contains lab assignments, reports, and Arduino Uno codes for the
 
 [- Lab 7: SPI: Slave](Labs/Task7_SPI/Task_7_Slave.ino)
 
-[- Lab 8: I2C]()
+[- Lab 8: I2C: Master](Labs/Task8_I2C/Task_8_Master.ino)
+
+[- Lab 8: I2C: Slave](Labs/Task8_I2C/Task_8_Slave.ino)
 
 ## ⚡ Requirements
 - Arduino IDE
