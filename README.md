@@ -3,9 +3,9 @@
 This repository contains lab assignments, reports, and Arduino Uno codes for the **Microprocessor Systems** course.
 
 ## 📚 Contents
-[- Lab Report 1](Lab Report Ayan Jafarova.pdf)
+- [Lab Report 1](Lab%20Report%20Ayan%20Jafarova.pdf)
 
-[- Lab Report 2](Lab Report 2 Ayan Jafarova.pdf)
+- [Lab Report 2](Lab%20Report%202%20Ayan%20Jafarova.pdf)
 
 [- Lab 1: Basic Blink](Labs/Task1_BLINK/Lab_1_BLINK.ino)
 
